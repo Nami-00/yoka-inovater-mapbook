@@ -1,5 +1,5 @@
 // Mapbox アクセストークン（必ず自分のトークンに置き換えてください）
-mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN_HERE';
+mapboxgl.accessToken = 'pk.eyJ1IjoibmFtaTAwIiwiYSI6ImNtazZnc2RnbzBvdnEzZXI1ZHhlN2Yyc3gifQ.ikUmsp1TSWrZNMteouL9aQ';
 
 let map;
 let currentClusterCount = 6;
