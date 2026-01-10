@@ -24,16 +24,18 @@ OUTPUT_MESH_RESULT_CSV = OUTPUT_DIR / 'mesh_analysis_result.csv'
 
 # 分析対象の建物用途（追加用途を含む）
 TARGET_USAGES = {
-    '官公庁施設': '官公庁施設',
-    '共同住宅': '共同住宅',
-    '住宅': '住宅',
-    '商業施設': '商業施設',
-    '文教厚生施設': '文教厚生施設',
-    '業務施設': '業務施設',                    # 追加
-    '商業系複合施設': '商業系複合施設',        # 追加
-    '店舗等併用住宅': '店舗等併用住宅',        # 追加
-    '店舗等併用共同住宅': '店舗等併用共同住宅'  # 追加
+    '421': '官公庁施設',
+    '412': '共同住宅',
+    '411': '住宅',
+    '402': '商業施設',
+    '422': '文教厚生施設',
+    '401': '業務施設',
+    '404': '商業系複合施設',
+    '413': '店舗等併用住宅',
+    '414': '店舗等併用共同住宅',
+    '403': '宿泊施設'
 }
+
 
 # 飲食店データの緯度経度範囲（福岡市・北九州市）
 FOOD_LAT_MIN = 33.0
@@ -89,17 +91,29 @@ print("🏢 [2/6] 建物データ読み込み")
 if not INPUT_BUILDING_FILE.exists():
     raise FileNotFoundError(f"❌ {INPUT_BUILDING_FILE} が見つかりません")
 
-buildings = gpd.read_file(INPUT_BUILDING_FILE)
-print(f"   総建物数: {len(buildings):,}")
+building_gdf = gpd.read_file(INPUT_BUILDING_FILE)
+print(f"総建物数: {len(building_gdf):,}")
 
-# 用途フィルタ
-buildings = buildings[buildings['usage_ja'].isin(TARGET_USAGES.keys())].copy()
-print(f"   対象建物数: {len(buildings):,}")
+# usage_ja フィールドがない場合は usage コードから生成
+if 'usage_ja' not in building_gdf.columns:
+    print("usage_ja フィールドが存在しないため、usage コードから生成します")
+    building_gdf['usage_ja'] = building_gdf['usage'].map(TARGET_USAGES)
+    print(f"usage_ja フィールドを追加しました")
+else:
+    # usage_ja が空の場合も usage コードから補完
+    mask = building_gdf['usage_ja'].isna() | (building_gdf['usage_ja'] == '')
+    if mask.any():
+        print(f"usage_ja が空のレコード {mask.sum():,} 件を補完します")
+        building_gdf.loc[mask, 'usage_ja'] = building_gdf.loc[mask, 'usage'].map(TARGET_USAGES)
+
+# 対象用途のみ抽出
+building_gdf = building_gdf[building_gdf['usage'].isin(TARGET_USAGES.keys())].copy()
+print(f"対象建物数: {len(building_gdf):,}")
 
 # 座標取得
-if 'cx' in buildings.columns and 'cy' in buildings.columns:
-    buildings['geometry'] = gpd.points_from_xy(buildings['cx'], buildings['cy'])
-    buildings = gpd.GeoDataFrame(buildings, geometry='geometry', crs='EPSG:4326')
+if 'cx' in building_gdf.columns and 'cy' in building_gdf.columns:
+    building_gdf['geometry'] = gpd.points_from_xy(building_gdf['cx'], building_gdf['cy'])
+    building_gdf = gpd.GeoDataFrame(building_gdf, geometry='geometry', crs='EPSG:4326')
 
 print(f"✅ 建物データ準備完了\n")
 
@@ -132,11 +146,11 @@ print(f"✅ 飲食店データ準備完了\n")
 # ==================== 4. 空間結合: 建物 → メッシュ ====================
 print("🔗 [4/6] 空間結合: 建物 → メッシュ")
 
-buildings_in_mesh = gpd.sjoin(buildings, mesh, how='inner', predicate='within')
-print(f"   結合レコード数: {len(buildings_in_mesh):,}")
+building_gdf_in_mesh = gpd.sjoin(building_gdf, mesh, how='inner', predicate='within')
+print(f"   結合レコード数: {len(building_gdf_in_mesh):,}")
 
 # 用途別集計
-building_counts = buildings_in_mesh.groupby(['mesh_code', 'usage_ja']).size().reset_index(name='count')
+building_counts = building_gdf_in_mesh.groupby(['mesh_code', 'usage_ja']).size().reset_index(name='count')
 building_pivot = building_counts.pivot(index='mesh_code', columns='usage_ja', values='count').fillna(0)
 
 # カラム名に接頭辞を追加

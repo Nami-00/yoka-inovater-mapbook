@@ -7,7 +7,7 @@ k=4,5,6,7 で同条件で繰り返し実行
 # ===============================
 # クラスタ数の設定
 # ===============================
-K_LIST = [4, 5, 6, 7]
+K_LIST = [4, 5, 6, 7, 8, 9]
 
 import sys
 import time
@@ -168,42 +168,70 @@ def analyze_clusters(result_df: pd.DataFrame, n_clusters: int):
         cluster_profiles.append(profile)
 
     cluster_df = pd.DataFrame(cluster_profiles)
-
+    print(cluster_df)
     print("\n  クラスタプロファイル:")
     print(cluster_df.to_string(index=False))
 
     return cluster_df
 
 
+# 命名ロジック（追加用途対応）
 def self_assign_name(row, ratio_cols):
-    """比率に基づいてクラスタ名を自動決定"""
-    max_ratio = 0
-    max_usage = ''
+    """
+    改良版：用途支配 + 住宅合算 + 低建物数の例外処理
+    row: cluster_df の1行（Series）
+    ratio_cols: '平均◯◯比率' の列名リスト
+    """
 
+    # 平均建物総数が極端に小さいクラスタは先に隔離（例：クラスタ6対策）
+    if '平均建物総数' in row and row['平均建物総数'] < 1:
+        # 飲食が極端に大きい等の異常も拾える
+        if '平均飲食店数' in row and row['平均飲食店数'] > 50:
+            return '要確認（建物0/飲食突出）'
+        return '低密度地域'
+
+    # 比率を辞書化（例：平均住宅比率 → 住宅）
+    ratios = {}
     for col in ratio_cols:
-        if row[col] > max_ratio:
-            max_ratio = row[col]
-            max_usage = col.replace('平均', '').replace('比率', '')
+        usage = col.replace('平均', '').replace('比率', '')
+        ratios[usage] = float(row[col])
 
-    # 命名ロジック（追加用途対応）
-    if '共同住宅' in max_usage and max_ratio > 0.3:
-        return '集合住宅地域'
-    elif '住宅' in max_usage and max_ratio > 0.7:
-        return '戸建住宅地域'
-    elif '店舗等併用共同住宅' in max_usage and max_ratio > 0.2:
-        return '店舗併用集合住宅地域'
-    elif '店舗等併用住宅' in max_usage and max_ratio > 0.2:
-        return '店舗併用住宅地域'
-    elif '商業系複合施設' in max_usage and max_ratio > 0.3:
+    # まずは単独支配（優先順位は用途解釈として自然な順に）
+    if ratios.get('商業系複合施設', 0) >= 0.6:
         return '複合商業地域'
-    elif '業務施設' in max_usage and max_ratio > 0.3:
-        return '業務地域'
-    elif '文教厚生施設' in max_usage and max_ratio > 0.5:
+    if ratios.get('宿泊施設', 0) >= 0.5:
+        return '宿泊施設地域'
+    if ratios.get('文教厚生施設', 0) >= 0.5:
         return '文教施設地域'
-    elif '官公庁施設' in max_usage and max_ratio > 0.5:
+    if ratios.get('官公庁施設', 0) >= 0.5:
         return '官公庁施設地域'
-    else:
-        return '混合地域'
+    if ratios.get('業務施設', 0) >= 0.4:
+        return '業務地域'
+    if ratios.get('商業施設', 0) >= 0.5:
+        # 商業は上位関数でも見るが、ここでも安全弁
+        return '商業集積地域'
+
+    # 住宅系：合算で拾う（クラスタ5対策）
+    res_sum = ratios.get('住宅', 0) + ratios.get('共同住宅', 0)
+    if res_sum >= 0.6:
+        # 戸建寄り／集合寄りを分ける
+        if ratios.get('住宅', 0) >= 0.6:
+            return '戸建住宅地域'
+        if ratios.get('共同住宅', 0) >= 0.4:
+            return '集合住宅地域'
+        return '住宅混合地域（戸建＋集合）'
+
+    # 併用住宅
+    if ratios.get('店舗等併用共同住宅', 0) >= 0.2:
+        return '店舗併用集合住宅地域'
+    if ratios.get('店舗等併用住宅', 0) >= 0.2:
+        return '店舗併用住宅地域'
+
+    # 商業混在（商業比率が中程度）
+    if ratios.get('商業施設', 0) >= 0.1:
+        return '商業混在地域'
+
+    return '混合地域'
 
 
 def assign_cluster_names(result_df: pd.DataFrame, cluster_df: pd.DataFrame, n_clusters: int):
@@ -346,19 +374,41 @@ def create_visualizations(result_df, cluster_df, cluster_names, n_clusters, out_
         ax.grid(axis='y', alpha=config.GRID_ALPHA)
 
     ax = axes[1, 0]
-    usage_cols = [c for c in cluster_df.columns if c.endswith('比率')][:4]
+
+    # cluster_df 側は analyze_clusters() で「平均{用途}比率」になっている
+    target_usage_names = list(config.TARGET_USAGES.values())
+
+    usage_cols = []
+    for name in target_usage_names:
+        col = f"平均{name}比率"
+        if col in cluster_df.columns:
+            usage_cols.append(col)
+
+    # デバッグ出力（後で消してOK）
+    print("  [DEBUG] cluster_df用途比率列:", [c for c in cluster_df.columns if "比率" in c])
+    print("  [DEBUG] usage_cols(表示対象):", usage_cols)
+
     if usage_cols:
-        cluster_df[usage_cols].plot(
-            kind='bar', stacked=True, ax=ax,
-            color=['#8dd3c7', '#ffffb3', '#bebada', '#fb8072']
+        cmap = plt.get_cmap('tab20')
+        colors = [cmap(i % 20) for i in range(len(usage_cols))]
+
+        cluster_df.set_index('クラスタID')[usage_cols].plot(
+            kind='bar', stacked=True, ax=ax, color=colors
         )
-        ax.set_title('クラスタ別建物用途比率', fontsize=14, fontweight='bold')
+
+        ax.set_title('クラスタ別建物用途比率（TARGET_USAGESのみ）', fontsize=14, fontweight='bold')
         ax.set_xlabel('クラスタID')
         ax.set_ylabel('比率')
         ax.set_xticklabels([str(i) for i in range(n_clusters)], rotation=0)
-        ax.legend(fontsize=8, loc='best')
+
+        ax.legend(fontsize=7, bbox_to_anchor=(1.02, 1), loc='upper left')
+
         if config.SHOW_GRID:
             ax.grid(axis='y', alpha=config.GRID_ALPHA)
+    else:
+        ax.set_title('クラスタ別建物用途比率（対象列が見つかりません）', fontsize=14, fontweight='bold')
+        ax.axis('off')
+
 
     ax = axes[1, 1]
     cluster_df.plot(x='クラスタID', y='メッシュ数', kind='bar', ax=ax, color='lightgreen')
@@ -411,6 +461,42 @@ def create_cluster_report(result_df: pd.DataFrame, cluster_df: pd.DataFrame, clu
                     f"  - {mesh['mesh_code']}: 建物{mesh['建物総数']:.0f}棟, "
                     f"飲食店{mesh['飲食店数']:.0f}件"
                 )
+        # 建物用途構成比の考察（TARGET_USAGESのみ）
+        target_usage_names = list(config.TARGET_USAGES.values())
+        ratio_cols = []
+        for name in target_usage_names:
+            col = f"建物_{name}_比率"
+            if col in cluster_df.columns:
+                ratio_cols.append(col)
+
+        if ratio_cols:
+            report.append("- 建物用途構成（TARGET_USAGESの平均比率）:")
+
+            row = cluster_df.loc[cluster_df['クラスタID'] == cluster_id, ratio_cols].iloc[0]
+
+            # 5%以上のみ記載（閾値は調整可）
+            for col, val in row.items():
+                if val >= 0.05:
+                    usage_name = col.replace("建物_", "").replace("_比率", "")
+                    report.append(f"  - {usage_name}: {val*100:.1f}%")
+
+            # 主用途（最大比率）
+            top_col = row.sort_values(ascending=False).index[0]
+            top_usage = top_col.replace("建物_", "").replace("_比率", "")
+            top_val = row[top_col]
+
+            report.append(
+                f"- 主用途は「{top_usage}」（{top_val*100:.1f}%）で、当該クラスタの土地利用特性を代表している。"
+            )
+
+            # 補助的な解釈（飲食店密度と組み合わせ）
+            # ※ cluster_dfに平均飲食店数 or 飲食店密度がある前提。列名はあなたの実装に合わせて必要なら変更してください。
+            if "飲食店密度" in cluster_df.columns:
+                dens = cluster_df.loc[cluster_df['クラスタID'] == cluster_id, "飲食店密度"].values[0]
+                report.append(
+                    f"- 飲食店密度（平均）は {dens:.3f} であり、用途構成と併せてクラスタの都市機能（居住・商業・業務・公共等）を解釈できる。"
+                )
+
         report.append("")
 
     report_text = '\n'.join(report)

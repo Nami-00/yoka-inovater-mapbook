@@ -16,7 +16,24 @@ document.addEventListener('DOMContentLoaded', () => {
 function initMap() {
     map = new mapboxgl.Map({
         container: 'map',
-        style: 'mapbox://styles/mapbox/streets-v12',
+        style: {
+            version: 8,
+            sources: {
+                'gsi-pale': {
+                    type: 'raster',
+                    tiles: ['https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'],
+                    tileSize: 256,
+                    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>'
+                }
+            },
+            layers: [{
+                id: 'gsi-pale-layer',
+                type: 'raster',
+                source: 'gsi-pale',
+                minzoom: 0,
+                maxzoom: 18
+            }]
+        },
         center: [130.4017, 33.5904],
         zoom: 10,
         pitch: 0,
@@ -48,6 +65,7 @@ function setupControls() {
     document.getElementById('display-mode').addEventListener('change', (e) => {
         currentDisplayMode = e.target.value;
         updateMapStyle();
+        updateLegend();
     });
 
     // 透明度変更
@@ -176,6 +194,20 @@ function updateMap() {
             
             html += `<p><strong>建物総数:</strong> ${properties['建物総数']}</p>`;
             html += `<p><strong>飲食店数:</strong> ${properties['飲食店数']}</p>`;
+            
+            // 用途別建物数を表示（割合も追加）
+            const usages = ['官公庁施設', '共同住宅', '住宅', '商業施設', '文教厚生施設', 
+               '業務施設', '商業系複合施設', '店舗等併用住宅', '店舗等併用共同住宅', '宿泊施設'];
+            const totalBuildings = properties['建物総数'];
+            usages.forEach(usage => {
+                const field = '建物_' + usage;
+                if (properties[field] && properties[field] > 0) {
+                    const count = properties[field];
+                    const ratio = totalBuildings > 0 ? (count / totalBuildings * 100).toFixed(1) : 0;
+                    html += `<p><strong>${usage}:</strong> ${count} (${ratio}%)</p>`;
+                }
+            });
+            
             html += '</div>';
 
             new mapboxgl.Popup()
@@ -242,6 +274,25 @@ function updateMapStyle() {
             1600, '#2171b5',
             3200, '#08519c',
             6400, '#08306b'
+        ];
+    } else {
+        // 用途別建物割合（%表示）
+        const usageField = '建物_' + currentDisplayMode;
+        colorExpression = [
+            'case',
+            ['==', ['get', '建物総数'], 0], '#f0f0f0',  // 建物なし = グレー
+            [
+                'interpolate', ['linear'], 
+                ['/', ['get', usageField], ['get', '建物総数']],  // 割合を計算
+                0, '#ffffcc',      // 0%
+                0.05, '#ffeda0',   // 5%
+                0.1, '#fed976',    // 10%
+                0.2, '#feb24c',    // 20%
+                0.3, '#fd8d3c',    // 30%
+                0.5, '#fc4e2a',    // 50%
+                0.7, '#e31a1c',    // 70%
+                1.0, '#bd0026'     // 100%
+            ]
         ];
     }
 
@@ -390,6 +441,36 @@ function updateLegend() {
             { color: '#2171b5', label: '1600' },
             { color: '#08519c', label: '3200' },
             { color: '#08306b', label: '6400+' }
+        ];
+        
+        colors.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'legend-item';
+            
+            const colorBox = document.createElement('span');
+            colorBox.className = 'legend-color';
+            colorBox.style.backgroundColor = item.color;
+            
+            const label = document.createElement('span');
+            label.className = 'legend-label';
+            label.textContent = item.label;
+            
+            div.appendChild(colorBox);
+            div.appendChild(label);
+            container.appendChild(div);
+        });
+    } else {
+        // 用途別建物割合の凡例
+        container.innerHTML = `<h4>${currentDisplayMode}（割合）</h4>`;
+        const colors = [
+            { color: '#ffffcc', label: '0%' },
+            { color: '#ffeda0', label: '5%' },
+            { color: '#fed976', label: '10%' },
+            { color: '#feb24c', label: '20%' },
+            { color: '#fd8d3c', label: '30%' },
+            { color: '#fc4e2a', label: '50%' },
+            { color: '#e31a1c', label: '70%' },
+            { color: '#bd0026', label: '100%' }
         ];
         
         colors.forEach(item => {
