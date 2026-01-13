@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>福岡市・北九州市 クラスター分析ビューア</title>
+    <link rel="icon" href="data:,">
+    
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="sidebar">
+        <h1>クラスター分析</h1>
+        
+        <div class="control-group">
+            <label>クラスター数:</label>
+            <select id="cluster-count">
+                <option value="4">4個</option>
+                <option value="5">5個</option>
+                <option value="6" selected>6個</option>
+                <option value="7">7個</option>
+                <option value="8">8個</option>
+                <option value="9">9個</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label>表示モード:</label>
+            <select id="display-mode">
+                <option value="cluster" selected>クラスター別</option>
+                <option value="density">飲食店密度</option>
+                <option value="buildings">建物総数</option>
+                <option value="官公庁施設">官公庁施設</option>
+                <option value="共同住宅">共同住宅</option>
+                <option value="住宅">住宅</option>
+                <option value="商業施設">商業施設</option>
+                <option value="文教厚生施設">文教厚生施設</option>
+                <option value="業務施設">業務施設</option>
+                <option value="商業系複合施設">商業系複合施設</option>
+                <option value="店舗等併用住宅">店舗等併用住宅</option>
+                <option value="店舗等併用共同住宅">店舗等併用共同住宅</option>
+                <option value="宿泊施設">宿泊施設</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label>透明度: <span id="opacity-value">70%</span></label>
+            <input type="range" id="opacity-slider" min="0" max="100" value="70">
+        </div>
+        
+        <div class="control-group">
+            <label>
+                <input type="checkbox" id="show-stations"> 駅を表示
+            </label>
+        </div>
+        
+        <div class="control-group" id="station-filters-group" style="display: none;">
+            <label>駅規模フィルター:</label>
+            <div id="station-scale-filters">
+                <label><input type="checkbox" id="scale-small" checked> 小規模 (2,000人未満)</label>
+                <label><input type="checkbox" id="scale-medium" checked> 中規模 (2,000-10,000人)</label>
+                <label><input type="checkbox" id="scale-large" checked> 大規模 (10,000人以上)</label>
+            </div>
+        </div>
+        
+        <div class="control-group" id="station-buffer-group" style="display: none;">
+            <label>駅からの距離バッファー:</label>
+            <div id="station-buffer-controls">
+                <label><input type="checkbox" id="buffer-enable"> バッファーを表示</label>
+                <div id="buffer-distance-control" style="display: none; margin-top: 10px;">
+                    <label>距離: <span id="buffer-distance-value">500m</span></label>
+                    <input type="range" id="buffer-distance" min="100" max="2000" step="100" value="500">
+                </div>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>表示クラスター:</label>
+            <div id="cluster-filters"></div>
+        </div>
+        
+        <button id="reset-view" class="btn-reset">表示リセット</button>
+        
+        <div id="stats-panel">
+            <h3>統計情報</h3>
+            <div id="stats-content">
+                <p><strong>総メッシュ数:</strong> <span id="total-meshes">-</span></p>
+                <p><strong>総建物数:</strong> <span id="total-buildings">-</span></p>
+                <p><strong>平均建物数:</strong> <span id="avg-buildings">-</span></p>
+                <p><strong>平均飲食店数:</strong> <span id="avg-restaurants">-</span></p>
+            </div>
+        </div>
+        
+        <div id="legend-panel">
+            <h3>凡例</h3>
+            <div id="legend-content"></div>
+        </div>
+    </div>
+    
+    <div id="map"></div>
+    
+    <script src="js/app.js"></script>
+</body>
+</html>
